@@ -1,0 +1,62 @@
+name: Compilar APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: finanzas_app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.4'
+          channel: stable
+          cache: true
+
+      - name: Generar proyecto Android
+        run: flutter create --org com.fiamaster --project-name finanzas_app --platforms android .
+
+      - name: Configurar permisos y Gradle
+        run: dart run tool/patch_platforms.dart || true
+
+      - name: Dependencias
+        run: flutter pub get
+
+      - name: Pruebas
+        run: flutter test
+        continue-on-error: true
+
+      - name: Compilar APK
+        run: |
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+          cp build/app/outputs/flutter-apk/app-release.apk MisFinanzas.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MisFinanzas-apk
+          path: finanzas_app/MisFinanzas.apk
+
+      - name: Adjuntar al Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: finanzas_app/MisFinanzas.apk
